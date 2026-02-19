@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0082C3">
+    <link rel="apple-touch-icon" href="icon.png">
+    
+    <title>Decathlon Strategy Dashboard</title>
+    <style>
+        :root { --blue:#0082C3; --bg:#F3F4F6; --dark:#111; }
+        body { font-family:'Segoe UI', sans-serif; background:var(--bg); margin:0; padding:15px; color:var(--dark); overflow-x:hidden; }
+        
+        /* HEADER RESPONSIVE */
+        header { background:white; padding:15px; border-radius:12px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; box-shadow:0 2px 10px rgba(0,0,0,0.05); border-left:6px solid var(--blue); margin-bottom:15px; gap: 15px; }
+        .header-top { display:flex; flex-direction:column; gap:8px; width: 100%; }
+        @media(min-width: 768px) { .header-top { width: auto; flex-direction:row; align-items:center; } }
+        
+        .filters-container { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        select { padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-weight: bold; font-size: 11px; color:#333; cursor:pointer; max-width:100%; background:#f9fafb; flex-grow: 1; }
+        
+        .controls { display:flex; gap:8px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+        @media(min-width: 768px) { .controls { width: auto; justify-content: flex-end; } select { max-width: 150px; flex-grow: 0; } }
+
+        button { padding:8px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; background:#e5e7eb; color:#444; font-size: 11px; transition:0.2s; }
+        button.active { background:var(--dark); color:white; }
+        button.year-btn.active { background:var(--blue); color:white; transform: scale(1.1); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .btn-play { background: #10B981; color: white; display: flex; align-items: center; gap: 5px; }
+
+        /* GRAPH AREA */
+        .chart-wrap { background:white; border-radius:16px; height:calc(100vh - 180px); position:relative; box-shadow:0 4px 15px rgba(0,0,0,0.05); overflow:hidden; min-height: 400px; }
+        .plot { position:absolute; top:40px; left:50px; right:30px; bottom:50px; border-left:2px solid #000; border-bottom:2px solid #000; background:white; }
+        
+        .zone-label { position: absolute; font-weight: 900; font-size: 24px; text-transform: uppercase; user-select: none; pointer-events: none; z-index: 0; text-align: center; line-height: 1; opacity: 0.4; }
+        @media(min-width: 768px) { .zone-label { font-size: 40px; } }
+        .zone-sub { font-size: 11px; font-weight: 700; opacity: 1; display: block; margin-top: 5px; color:#333; }
+        @media(min-width: 768px) { .zone-sub { font-size: 14px; } }
+        
+        .zone-star { top: 5%; left: 3%; color:rgba(22, 163, 74, 0.4); text-align: left; }       
+        .zone-cow  { top: 5%; right: 3%; color:rgba(0, 130, 195, 0.4); text-align: right; }      
+        .zone-dil  { bottom: 5%; left: 3%; color:rgba(234, 179, 8, 0.5); text-align: left; }      
+        .zone-dog  { bottom: 5%; right: 3%; color:rgba(239, 68, 68, 0.4); text-align: right; }   
+
+        .axis-label { position:absolute; font-size:10px; font-weight:900; color:#000; text-transform: uppercase; }
+        @media(min-width: 768px) { .axis-label { font-size: 12px; } }
+        .axis-y-label { top:50%; left:-35px; transform:rotate(-90deg) translateX(50%); }
+        .axis-x-label { bottom:-35px; left:50%; transform:translateX(-50%); }
+
+        .grid-line { position:absolute; background:#e5e7eb; pointer-events:none; }
+        .grid-txt { position:absolute; font-size:10px; font-weight:bold; color:#000; }
+        
+        /* BULLES */
+        .bubble { 
+            position:absolute; border-radius:50%; transform:translate(-50%,50%); 
+            border:1px solid rgba(255,255,255,0.8); cursor:pointer; 
+            display:flex; align-items:center; justify-content:center; 
+            box-shadow:0 4px 10px rgba(0,0,0,0.3); transition: all 0.8s cubic-bezier(0.25, 1, 0.5, 1); 
+            z-index: 10; overflow: visible; /* Modifié pour le tactile */
+        }
+        .bubble-txt { position: absolute; width: 90%; text-align: center; font-size: 9px; font-weight: 900; color: white; line-height: 1.1; pointer-events: none; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; z-index: 20; word-wrap: break-word; overflow:hidden; }
+        @media(min-width: 768px) { .bubble-txt { font-size: 10px; } }
+
+        /* TOOLTIP MOBILE-FRIENDLY (Pointer-events auto permet de cliquer dedans) */
+        .tooltip { 
+            visibility:hidden; opacity:0; position:absolute; 
+            background:rgba(0,0,0,0.95); color:white; padding:12px; border-radius:8px; 
+            min-width:200px; z-index:1000; border:1px solid #555; text-align:left; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+            bottom: 120%; left: 50%; transform: translateX(-50%); 
+            transition: opacity 0.2s; pointer-events: auto; /* IMPORTANT POUR LE TACTILE */
+        }
+        .tooltip.force-bottom { bottom: auto; top: 120%; }
+        .tooltip.force-left   { left: auto; right: -20px; transform: none; }
+        .tooltip.force-right  { left: -20px; right: auto; transform: none; }
+        
+        /* Au hover (PC) ou au Focus (Mobile), on affiche */
+        .bubble:hover .tooltip, .bubble:focus .tooltip, .bubble.active-touch .tooltip { visibility:visible; opacity:1; }
+        .bubble:hover { z-index: 100 !important; border:2px solid #000; opacity: 1 !important; filter: none !important; }
+
+        .tooltip-header { font-weight:bold; border-bottom:1px solid #666; margin-bottom:8px; padding-bottom:4px; color:#38BDF8; font-size:13px; }
+        .row { display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px; border-bottom:1px dashed #333; padding-bottom:2px; }
+        .val { font-weight:bold; color:white; font-family:monospace; }
+        
+        /* Bouton de Zoom dans le tooltip (spécial Mobile) */
+        .btn-zoom { margin-top: 8px; width: 100%; padding: 8px; background: var(--blue); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 10px; }
+        .btn-zoom:hover { background: #006090; }
+
+        .close-btn { position:absolute; top: -5px; right: -5px; width: 20px; height: 20px; background: #EF4444; color: white; border-radius: 50%; display: none; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; border: 1px solid white; z-index: 300; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .bubble:hover .close-btn { display:flex; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-top">
+        <h2 style="margin:0; color:var(--blue); font-size:18px;">Stratégie Matrix</h2>
+        <div class="filters-container">
+            <select id="univ-select" onchange="setFilter('UNIV', this.value)"><option value="ALL">Tous Univers</option></select>
+            <select id="pano-select" onchange="setFilter('PANO', this.value)"><option value="ALL">Toutes Panoplies</option></select>
+            <select id="nature-select" onchange="setFilter('NATURE', this.value)"><option value="ALL">Toutes Natures</option></select>
+            <select id="focus-select" onchange="setFocus(this.value)"><option value="ALL">🔍 Focus : Toutes</option></select>
+        </div>
+        <div id="subtitle" style="font-size:12px; font-weight:bold; color:#555;">Chargement...</div>
+    </div>
+    
+    <div class="controls">
+        <span style="font-weight:bold; font-size:11px; color:#888;">ANNÉE :</span>
+        <div id="year-container"></div>
+        <button id="btn-play" class="btn-play" onclick="togglePlay()">▶ Lancer</button>
+        <div style="width:1px; height:20px; background:#ccc; margin:0 5px;"></div>
+        <button id="btn-stock" class="active" onclick="setSize('stock')">STOCK</button>
+        <button id="btn-sales" onclick="setSize('sales')">VENTES</button>
+        <button id="btn-back" style="background:var(--blue); color:white; display:none;" onclick="initMacro()">⬅ RETOUR</button>
+    </div>
+</header>
+
+<div class="chart-wrap">
+    <div class="plot" id="plot">
+        <div class="zone-label zone-star">STARS<span class="zone-sub">Rentable & Croissance</span></div>
+        <div class="zone-label zone-cow">CASH COWS<span class="zone-sub">Rentable & Peu dynamique</span></div>
+        <div class="zone-label zone-dil">DILEMMAS<span class="zone-sub">Croissance & Risque</span></div>
+        <div class="zone-label zone-dog">DOGS<span class="zone-sub">Déclin & Perte</span></div>
+        
+        <div class="axis-label axis-y-label">GMROI (Marge/stock)</div>
+        <div class="axis-label axis-x-label">← Croissance CAGR (26 vs 23)</div>
+        
+        <div id="grid-layer" style="position:absolute; width:100%; height:100%;"></div>
+        <div id="ref-lines"></div>
+    </div>
+</div>
+
+<script>
+    // === ENREGISTREMENT DU SERVICE WORKER (PWA) ===
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').then((reg) => {
+          console.log('PWA Service Worker enregistré !');
+        });
+      });
+    }
+
+    const MIN_X = -20, MAX_X = 60, MAX_Y = 3.0;
+    const EXCLUDED = ["Direct Orders", "Circularity", "Services", "Service", "0", "Decapro", "0 EUR", "Non classé"];
+
+    let RAW_DATA = [], VIEW = 'MACRO', SIZE = 'stock', YEAR = 0;
+    let HIDDEN = new Set(), YEARS_LIST = [];
+    let FILTERS = { UNIV: 'ALL', PANO: 'ALL', NATURE: 'ALL' };
+    let FOCUS = 'ALL'; 
+    let playInterval = null;
+
+    const fmt = {
+        money: v => v >= 1000000 ? (v/1000000).toFixed(1)+' M€' : (v>=1000?(v/1000).toFixed(0)+' K€':v.toFixed(0)+'€'),
+        pct: v => Math.round(v)+'%'
+    };
+
+    fetch('data.json').then(r => r.json()).then(data => {
+        RAW_DATA = data.filter(d => !EXCLUDED.includes(d.cat) && !EXCLUDED.includes(d.univ));
+        
+        populateSelect('univ-select', 'univ');
+        populateSelect('pano-select', 'panoplie');
+        populateSelect('nature-select', 'nature');
+
+        YEARS_LIST = [...new Set(RAW_DATA.map(d => d.year))].sort((a,b)=>a-b);
+        YEAR = YEARS_LIST[YEARS_LIST.length-1];
+        renderYearButtons();
+        initMacro();
+    });
+
+    function populateSelect(selectId, dataKey) {
+        const items = [...new Set(RAW_DATA.map(d => d[dataKey]))].filter(v => v && v !== "Non défini" && v !== "Autre" && v !== "Inconnu").sort();
+        const sel = document.getElementById(selectId);
+        items.forEach(i => { let o = document.createElement('option'); o.value = i; o.innerText = i; sel.appendChild(o); });
+    }
+
+    function updateFocusList() {
+        let filteredAllYears = RAW_DATA.filter(d => 
+            (FILTERS.UNIV === 'ALL' || d.univ === FILTERS.UNIV) &&
+            (FILTERS.PANO === 'ALL' || d.panoplie === FILTERS.PANO) &&
+            (FILTERS.NATURE === 'ALL' || d.nature === FILTERS.NATURE)
+        );
+        let uniqueItems = new Map();
+        if (VIEW === 'MACRO') {
+            filteredAllYears.forEach(d => { if(!HIDDEN.has(d.cat)) uniqueItems.set(d.cat, d.cat); });
+        } else {
+            filteredAllYears.forEach(d => {
+                if(d.cat === CAT_active && !HIDDEN.has(d.fam_name)) { uniqueItems.set(d.fam_name, (d.fam_code ? d.fam_code + " - " : "") + d.fam_name); }
+            });
+        }
+        
+        const sel = document.getElementById('focus-select');
+        sel.innerHTML = '<option value="ALL">🔍 Focus : Toutes</option>';
+        let sorted = [...uniqueItems.entries()].sort((a,b) => a[1].localeCompare(b[1]));
+        
+        let focusStillExists = false;
+        sorted.forEach(([id, label]) => {
+            let o = document.createElement('option'); o.value = id; o.innerText = label;
+            if (id === FOCUS) { o.selected = true; focusStillExists = true; }
+            sel.appendChild(o);
+        });
+        if (!focusStillExists) FOCUS = 'ALL';
+    }
+
+    function setFilter(type, value) { stopPlay(); FILTERS[type] = value; updateFocusList(); initMacro(); }
+    function setFocus(value) { FOCUS = value; render(); }
+
+    function renderYearButtons() {
+        const c = document.getElementById('year-container');
+        c.innerHTML = '';
+        YEARS_LIST.forEach(y => {
+            let b = document.createElement('button'); b.innerText = y; b.className = 'year-btn ' + (y===YEAR ? 'active' : '');
+            b.onclick = () => { stopPlay(); YEAR=y; renderYearButtons(); render(); };
+            c.appendChild(b);
+        });
+    }
+
+    function togglePlay() { if (playInterval) stopPlay(); else startPlay(); }
+    function startPlay() {
+        let btn = document.getElementById('btn-play'); btn.innerText = "⏸ Pause"; btn.style.background = "#EF4444"; 
+        let currentIndex = YEARS_LIST.indexOf(YEAR);
+        if(currentIndex === YEARS_LIST.length - 1) currentIndex = -1;
+        playInterval = setInterval(() => {
+            currentIndex++;
+            if(currentIndex >= YEARS_LIST.length) { stopPlay(); return; }
+            YEAR = YEARS_LIST[currentIndex]; renderYearButtons(); render();
+        }, 1200);
+    }
+    function stopPlay() {
+        if (playInterval) { clearInterval(playInterval); playInterval = null; }
+        let btn = document.getElementById('btn-play'); btn.innerText = "▶ Lancer"; btn.style.background = "#10B981"; 
+    }
+
+    function getData() {
+        let data = RAW_DATA.filter(d => d.year === YEAR && (FILTERS.UNIV === 'ALL' || d.univ === FILTERS.UNIV) && (FILTERS.PANO === 'ALL' || d.panoplie === FILTERS.PANO) && (FILTERS.NATURE === 'ALL' || d.nature === FILTERS.NATURE));
+        if (VIEW === 'MACRO') {
+            let agg = {};
+            data.forEach(d => {
+                if(HIDDEN.has(d.cat)) return;
+                if(!agg[d.cat]) agg[d.cat] = { name:d.cat, stock:0, sales:0, gmW:0, caW:0 };
+                agg[d.cat].stock += d.stock; agg[d.cat].sales += d.sales;
+                agg[d.cat].gmW += (d.gmroi * d.stock); agg[d.cat].caW += (d.cagr * d.sales);  
+            });
+            return Object.values(agg).filter(g => g.stock > 0 || g.sales > 0).map(g => ({
+                id: g.name, label: g.name, stock: g.stock, sales: g.sales,
+                gmroi: g.stock > 0 ? g.gmW / g.stock : 0, cagr: g.sales > 0 ? g.caW / g.sales : 0 
+            }));
+        } else {
+            return data.filter(d => d.cat === CAT_active && !HIDDEN.has(d.fam_name) && (d.stock>0 || d.sales>0)).map(d => ({
+                id: d.fam_name, label: (d.fam_code ? d.fam_code + " - " : "") + d.fam_name,
+                stock: d.stock, sales: d.sales, gmroi: d.gmroi, cagr: d.cagr, models: d.models
+            }));
+        }
+    }
+
+    // FONCTION GLOBALE POUR LE BOUTON ZOOM (Mobile Friendly)
+    window.zoomToCategory = function(catId) {
+        stopPlay();
+        VIEW = 'MICRO'; 
+        CAT_active = catId; 
+        FOCUS = 'ALL'; 
+        updateFocusList();
+        render(); 
+    };
+
+    function render() {
+        const items = getData();
+        const plot = document.getElementById('plot');
+
+        let txt = VIEW==='MACRO' ? `Vue Globale : ${YEAR}` : `${CAT_active} : ${YEAR}`;
+        let activeF = [];
+        if(FILTERS.UNIV !== 'ALL') activeF.push(FILTERS.UNIV);
+        if(FILTERS.PANO !== 'ALL') activeF.push(FILTERS.PANO);
+        if(FILTERS.NATURE !== 'ALL') activeF.push(FILTERS.NATURE);
+        if(activeF.length > 0) txt += ` (${activeF.join(' | ')})`;
+        
+        document.getElementById('subtitle').innerText = txt;
+        document.getElementById('btn-back').style.display = VIEW==='MACRO'?'none':'block';
+
+        const grid = document.getElementById('grid-layer');
+        grid.innerHTML = '';
+        for(let i=0; i<=MAX_Y; i+=0.5) {
+            let p = (i/MAX_Y)*100;
+            grid.innerHTML += `<div class="grid-txt" style="bottom:${p}%; left:-25px; text-align:right; width:20px;">${i.toFixed(1)}</div>`;
+        }
+        let rangeX = MAX_X - MIN_X;
+        for(let i=MIN_X; i<=MAX_X; i+=10) {
+            let p = ((MAX_X - i) / rangeX) * 100;
+            if(p>=0 && p<=100) {
+                grid.innerHTML += `<div class="grid-line" style="left:${p}%; top:0; bottom:0; width:1px;"></div>
+                                   <div class="grid-txt" style="left:${p}%; bottom:-20px; transform:translateX(-50%);">${i}%</div>`;
+            }
+        }
+
+        if(items.length > 0) {
+            let totalSales = items.reduce((a,b)=>a+b.sales, 0);
+            let avgCagr = totalSales > 0 ? items.reduce((a,b)=>a+(b.cagr*b.sales),0)/totalSales : 0;
+            let posH = (1.2 / MAX_Y) * 100;
+            let posV = ((MAX_X - avgCagr) / rangeX) * 100;
+            if(posV < 0) posV = -10; if(posV > 100) posV = 110;
+
+            document.getElementById('ref-lines').innerHTML = `
+                <div style="position:absolute; bottom:${posH}%; width:100%; border-top:2px solid #333; opacity:0.3; transition: bottom 0.8s;"></div>
+                <div style="position:absolute; right:0; bottom:${posH}%; background:#333; color:white; font-size:10px; font-weight:bold; padding:2px 6px; transition: bottom 0.8s;">Obj 1.2</div>
+                <div style="position:absolute; height:100%; left:${posV}%; border-left:2px dashed var(--blue); opacity:0.5; transition: left 0.8s;"></div>
+            `;
+            
+            let maxVal = Math.max(...items.map(d => SIZE==='stock'?d.stock:d.sales)) || 1;
+
+            let currentIds = items.map(d => 'b_' + d.id.replace(/\W/g, ''));
+            plot.querySelectorAll('.bubble').forEach(e => {
+                if(!currentIds.includes(e.id)) e.remove();
+            });
+
+            items.forEach(d => {
+                let plotC = Math.max(MIN_X, Math.min(MAX_X, d.cagr));
+                let plotG = Math.max(0, Math.min(MAX_Y, d.gmroi));
+
+                let x = ((MAX_X - plotC) / rangeX) * 100;
+                let y = (plotG / MAX_Y) * 100;
+                let r = 25 + (Math.sqrt(SIZE==='stock'?d.stock:d.sales)/Math.sqrt(maxVal))*90;
+
+                let color = '#3B82F6';
+                if (d.gmroi >= 1.2 && d.cagr >= avgCagr) color = '#16A34A';
+                else if (d.gmroi >= 1.2) color = '#0082C3';
+                else if (d.cagr >= avgCagr) color = '#EAB308';
+                else color = '#EF4444';
+
+                let isFocused = (FOCUS === 'ALL' || d.id === FOCUS);
+                let safeId = 'b_' + d.id.replace(/\W/g, '');
+                let b = document.getElementById(safeId);
+                
+                if (!b) {
+                    b = document.createElement('div');
+                    b.id = safeId;
+                    // Gestion du tactile pour ouvrir le tooltip au doigt
+                    b.onclick = function(e) {
+                        document.querySelectorAll('.bubble').forEach(el => el.classList.remove('active-touch'));
+                        this.classList.add('active-touch');
+                        e.stopPropagation(); // Empêche le clic de se propager au document
+                    };
+                    plot.appendChild(b);
+                }
+
+                b.className = 'bubble' + (r < 45 ? ' tiny' : '');
+                Object.assign(b.style, { 
+                    left: x+'%', bottom: y+'%', width: r+'px', height: r+'px', background: color,
+                    opacity: isFocused ? '1' : '0.15', filter: isFocused ? 'none' : 'grayscale(100%)', zIndex: isFocused ? '10' : '1'
+                });
+                
+                let lbl = d.label;
+                if(VIEW==='MICRO' && d.models) { lbl += `<br><span style="font-weight:normal; opacity:0.9; color:#eee;">${d.models} Mod.</span>`; }
+
+                // Bouton de zoom intégré au Tooltip (uniquement en vue Macro)
+                let zoomBtnHTML = VIEW === 'MACRO' ? `<button class="btn-zoom" onclick="zoomToCategory('${d.id}')">🔍 Explorer les familles</button>` : '';
+
+                b.innerHTML = `<div class="bubble-txt">${lbl}</div>
+                    <div class="close-btn" onclick="event.stopPropagation(); hideItem('${d.id}')">×</div>
+                    <div class="tooltip">
+                        <div class="tooltip-header">${d.label}</div>
+                        <div class="row"><span>Stock :</span><span class="val">${fmt.money(d.stock)}</span></div>
+                        <div class="row"><span>Ventes :</span><span class="val">${fmt.money(d.sales)}</span></div>
+                        <div class="row"><span>GMROI :</span><span class="val">${d.gmroi.toFixed(2)}</span></div>
+                        <div class="row"><span>CAGR :</span><span class="val">${fmt.pct(d.cagr)}</span></div>
+                        ${d.models ? `<div class="row"><span>Modèles :</span><span class="val" style="color:#FFD700">${d.models}</span></div>`:''}
+                        ${zoomBtnHTML}
+                    </div>`;
+                
+                b.onmouseenter = function() {
+                    let tip = this.querySelector('.tooltip');
+                    tip.className = 'tooltip';
+                    let bubbleRect = this.getBoundingClientRect();
+                    let plotRect = document.getElementById('plot').getBoundingClientRect();
+                    
+                    if (bubbleRect.top < plotRect.top + 150) tip.classList.add('force-bottom');
+                    if (bubbleRect.right > plotRect.right - 100) tip.classList.add('force-left');
+                    else if (bubbleRect.left < plotRect.left + 100) tip.classList.add('force-right');
+                };
+            });
+        }
+    }
+
+    // Ferme le tooltip ouvert si on tape à côté (sur mobile)
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.bubble').forEach(el => el.classList.remove('active-touch'));
+    });
+
+    function setSize(s) { stopPlay(); SIZE=s; document.getElementById('btn-stock').className=s==='stock'?'active':''; document.getElementById('btn-sales').className=s==='sales'?'active':''; render(); }
+    function hideItem(id) { stopPlay(); HIDDEN.add(id); updateFocusList(); render(); }
+    function initMacro() { stopPlay(); VIEW='MACRO'; CAT_active=null; FOCUS='ALL'; updateFocusList(); render(); }
+</script>
+</body>
+</html>
